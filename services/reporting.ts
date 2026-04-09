@@ -348,7 +348,7 @@ export async function buildReportBundle(
       ledger_balance: b.balance,
       statement_amount: null,
       difference: null,
-      status: "PENDING_STATEMENT",
+      status: "PENDING_STATEMENT" as const,
     }))
     .sort((a, b) => {
       const off = a.office_code.localeCompare(b.office_code);

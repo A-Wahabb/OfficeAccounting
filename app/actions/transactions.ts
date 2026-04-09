@@ -147,7 +147,6 @@ export async function approveTransactionAction(
 
 export async function rejectTransactionAction(
   transactionId: unknown,
-  _comment: unknown,
 ): Promise<TransactionActionResult> {
   const idParsed = idSchema.safeParse(transactionId);
   if (!idParsed.success) {

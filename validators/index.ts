@@ -1,4 +1,3 @@
-export * from "./contact";
 export * from "./office";
 export * from "./account";
 export * from "./transaction";

@@ -135,7 +135,7 @@ function RowActions({
   });
 
   const rejectMut = useMutation({
-    mutationFn: () => rejectTransactionAction(t.id, ""),
+    mutationFn: () => rejectTransactionAction(t.id),
     onSuccess: (r) => {
       if (r.ok) {
         setError(null);

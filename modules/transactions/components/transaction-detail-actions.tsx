@@ -43,7 +43,7 @@ export function TransactionDetailActions({
   });
 
   const rejectMut = useMutation({
-    mutationFn: () => rejectTransactionAction(transactionId, comment),
+    mutationFn: () => rejectTransactionAction(transactionId),
     onSuccess: (r) => {
       if (r.ok) {
         setError(null);

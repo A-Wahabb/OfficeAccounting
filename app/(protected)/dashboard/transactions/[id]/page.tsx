@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireRole } from "@/lib/auth/guards";
-import { canApprove } from "@/lib/auth/transaction-permissions";
+import { canApprove, canReject } from "@/lib/auth/transaction-permissions";
 import { getServerSession } from "@/lib/auth/session";
 import { ROUTES } from "@/lib/constants/routes";
 import { TransactionDetailActions } from "@/modules/transactions/components/transaction-detail-actions";
@@ -61,6 +61,7 @@ export default async function TransactionDetailPage({
         status={tx.status}
         type={tx.type}
         canApprove={canApprove(roles)}
+        canReject={canReject(roles)}
       />
 
       <div className="overflow-x-auto rounded-md border border-neutral-200 dark:border-neutral-700">

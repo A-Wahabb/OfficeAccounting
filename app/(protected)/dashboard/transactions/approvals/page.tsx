@@ -23,9 +23,8 @@ export default async function TransactionApprovalsPage() {
           Approval queue
         </h1>
         <p className="text-sm text-neutral-600 dark:text-neutral-400">
-          Manager approval moves items to <strong>APPROVED</strong> (
-          <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">fn_transaction_approve</code>
-          ).
+          Admin/Manager can move pending transactions to <strong>APPROVED</strong> or{" "}
+          <strong>REJECTED</strong>.
         </p>
       </div>
 

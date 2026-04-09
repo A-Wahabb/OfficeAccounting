@@ -9,8 +9,7 @@ export type TransactionType =
 export type TransactionStatus =
   | "PENDING"
   | "APPROVED"
-  | "REJECTED"
-  | "POSTED";
+  | "REJECTED";
 
 export type TransactionSummary = {
   id: string;
@@ -23,6 +22,7 @@ export type TransactionSummary = {
   transaction_date: string;
   currency: string;
   description: string | null;
+  total_amount: number;
   is_reversed: boolean;
   reversal_of_transaction_id: string | null;
   created_at: string;

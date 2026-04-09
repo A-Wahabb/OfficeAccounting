@@ -145,17 +145,22 @@ export async function approveTransactionAction(
   return { ok: true };
 }
 
-export async function postTransactionAction(
+export async function rejectTransactionAction(
   transactionId: unknown,
+  _comment: unknown,
 ): Promise<TransactionActionResult> {
   const idParsed = idSchema.safeParse(transactionId);
   if (!idParsed.success) {
     return { ok: false, error: "Invalid transaction" };
   }
 
-  const { user } = await getServerSession();
+  const { user, roles } = await getServerSession();
   if (!user) {
     return { ok: false, error: "Not signed in" };
+  }
+
+  if (!hasAnyRole(roles, ["ADMIN", "MANAGER"])) {
+    return { ok: false, error: "Only admin or manager can reject" };
   }
 
   const profile = await ensureUserProfileAction();
@@ -164,9 +169,11 @@ export async function postTransactionAction(
   }
 
   const supabase = await createSupabaseServerClient();
-  const { error } = await supabase.rpc("fn_transaction_post", {
-    p_transaction_id: idParsed.data,
-  });
+  const { error } = await supabase
+    .from("transactions")
+    .update({ status: "REJECTED" })
+    .eq("id", idParsed.data)
+    .eq("status", "PENDING");
 
   if (error) {
     return { ok: false, error: error.message };
@@ -174,44 +181,4 @@ export async function postTransactionAction(
 
   revalidateTransactions();
   return { ok: true };
-}
-
-export async function reverseTransactionAction(
-  transactionId: unknown,
-  description: unknown,
-): Promise<TransactionActionResult> {
-  const idParsed = idSchema.safeParse(transactionId);
-  if (!idParsed.success) {
-    return { ok: false, error: "Invalid transaction" };
-  }
-
-  const desc =
-    typeof description === "string" ? description.trim() : "";
-
-  const { user, roles } = await getServerSession();
-  if (!user) {
-    return { ok: false, error: "Not signed in" };
-  }
-
-  if (!hasAnyRole(roles, ["ADMIN", "ACCOUNTANT"])) {
-    return { ok: false, error: "Only accountants can reverse" };
-  }
-
-  const profile = await ensureUserProfileAction();
-  if (!profile.ok) {
-    return { ok: false, error: profile.error };
-  }
-
-  const supabase = await createSupabaseServerClient();
-  const { data, error } = await supabase.rpc("fn_transaction_reversal", {
-    p_original_transaction_id: idParsed.data,
-    p_description: desc || null,
-  });
-
-  if (error) {
-    return { ok: false, error: error.message };
-  }
-
-  revalidateTransactions();
-  return { ok: true, transactionId: data as string };
 }

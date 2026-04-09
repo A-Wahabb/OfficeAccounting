@@ -18,11 +18,13 @@ const TX_SELECT = `
 function mapSummary(
   row: Record<string, unknown>,
   officeMap: Map<string, { code: string; name: string }>,
+  amountMap: Map<string, number>,
 ): TransactionSummary {
   const oid = row.office_id as string;
   const o = officeMap.get(oid);
+  const txId = row.id as string;
   return {
-    id: row.id as string,
+    id: txId,
     transaction_number: row.transaction_number as string,
     office_id: oid,
     office_code: o?.code ?? "",
@@ -32,11 +34,40 @@ function mapSummary(
     transaction_date: row.transaction_date as string,
     currency: row.currency as string,
     description: (row.description as string | null) ?? null,
+    total_amount: amountMap.get(txId) ?? 0,
     is_reversed: row.is_reversed as boolean,
     reversal_of_transaction_id:
       (row.reversal_of_transaction_id as string | null) ?? null,
     created_at: row.created_at as string,
   };
+}
+
+async function loadTransactionAmountMap(
+  transactionIds: string[],
+): Promise<Map<string, number>> {
+  const supabase = await createSupabaseServerClient();
+  const unique = Array.from(new Set(transactionIds.filter(Boolean)));
+  if (unique.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await supabase
+    .from("transaction_items")
+    .select("transaction_id, debit")
+    .in("transaction_id", unique);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const amountMap = new Map<string, number>();
+  for (const raw of data ?? []) {
+    const row = raw as { transaction_id: string; debit: number | string };
+    const amt = Number(row.debit);
+    amountMap.set(row.transaction_id, (amountMap.get(row.transaction_id) ?? 0) + amt);
+  }
+
+  return amountMap;
 }
 
 async function loadOfficeMap(
@@ -91,8 +122,9 @@ export async function listTransactions(options?: {
   const officeMap = await loadOfficeMap(
     rows.map((r) => r.office_id as string),
   );
+  const amountMap = await loadTransactionAmountMap(rows.map((r) => r.id as string));
 
-  return rows.map((r) => mapSummary(r, officeMap));
+  return rows.map((r) => mapSummary(r, officeMap, amountMap));
 }
 
 export async function getTransactionWithItems(
@@ -116,6 +148,7 @@ export async function getTransactionWithItems(
 
   const row = tx as Record<string, unknown>;
   const officeMap = await loadOfficeMap([row.office_id as string]);
+  const amountMap = await loadTransactionAmountMap([row.id as string]);
 
   const { data: items, error: itemErr } = await supabase
     .from("transaction_items")
@@ -146,7 +179,7 @@ export async function getTransactionWithItems(
     }
   }
 
-  const summary = mapSummary(row, officeMap);
+  const summary = mapSummary(row, officeMap, amountMap);
 
   const mappedItems = itemRows.map((it) => {
     const r = it as {

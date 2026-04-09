@@ -9,10 +9,6 @@ export function canCreateTransaction(roles: AppRole[]): boolean {
   return hasAnyRole(roles, ["ADMIN", "ACCOUNTANT"]);
 }
 
-export function canPost(roles: AppRole[]): boolean {
-  return hasAnyRole(roles, ["ADMIN", "MANAGER", "ACCOUNTANT"]);
-}
-
-export function canReverse(roles: AppRole[]): boolean {
-  return hasAnyRole(roles, ["ADMIN", "ACCOUNTANT"]);
+export function canReject(roles: AppRole[]): boolean {
+  return hasAnyRole(roles, ["ADMIN", "MANAGER"]);
 }

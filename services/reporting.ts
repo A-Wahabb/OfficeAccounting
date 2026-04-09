@@ -2,8 +2,13 @@ import type {
   ReportBalanceRow,
   ReportBundle,
   ReportCashFlowRow,
+  ReportGeneralLedgerRow,
+  ReportHeadwiseExpenseRow,
+  ReportProfitAndLoss,
+  ReportReconciliationRow,
   ReportTransaction,
   ReportTransactionLine,
+  ReportTrialBalanceRow,
 } from "@/types/reporting";
 import type { ReportQuery } from "@/lib/reports/params";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
@@ -43,9 +48,20 @@ function signedLineAmount(
   return txType === "REVERSAL" ? -raw : raw;
 }
 
-/**
- * Posted transactions in [from, to], optional office and account (line) filters.
- */
+function isExpenseType(accountType: string): boolean {
+  return accountType.toUpperCase() === "EXPENSE";
+}
+
+function isIncomeType(accountType: string): boolean {
+  return accountType.toUpperCase() === "INCOME";
+}
+
+function isCashOrBank(accountType: string): boolean {
+  const t = accountType.toUpperCase();
+  return t === "CASH" || t === "BANK";
+}
+
+/** Approved transactions in [from, to], optional office/account filters. */
 export async function buildReportBundle(
   query: ReportQuery,
 ): Promise<ReportBundle> {
@@ -76,7 +92,6 @@ export async function buildReportBundle(
       )
     `,
     )
-    .eq("status", "POSTED")
     .gte("transaction_date", query.from)
     .lte("transaction_date", query.to)
     .order("transaction_date", { ascending: true })
@@ -93,8 +108,11 @@ export async function buildReportBundle(
   }
 
   const rawTx = (txRows ?? []) as Record<string, unknown>[];
+  const filteredRawTx = rawTx.filter(
+    (row) => String(row.status ?? "") === "APPROVED",
+  );
 
-  let transactions: ReportTransaction[] = rawTx.map((row) => {
+  let transactions: ReportTransaction[] = filteredRawTx.map((row) => {
     const items = (row.transaction_items ?? []) as Record<string, unknown>[];
     const lines: ReportTransactionLine[] = items.map((it) => {
       const accRaw = it.accounts;
@@ -141,7 +159,7 @@ export async function buildReportBundle(
     office_code: officeCodes.get(t.office_id) ?? "",
   }));
 
-  /** Balances: current posted balances from account_balances (RLS-scoped). */
+  /** Balances: current ledger balances from account_balances (RLS-scoped). */
   let balQuery = supabase.from("account_balances").select(
     `
       account_id,
@@ -219,15 +237,148 @@ export async function buildReportBundle(
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([date, net_change]) => ({ date, net_change }));
 
+  const trialMap = new Map<string, ReportTrialBalanceRow>();
+  const expenseMap = new Map<string, ReportHeadwiseExpenseRow>();
+  const glRows: Omit<ReportGeneralLedgerRow, "running_balance">[] = [];
+
+  let incomeTotal = 0;
+  let expenseTotal = 0;
+
+  for (const t of transactions) {
+    for (const line of t.lines) {
+      const trialKey = `${t.office_id}::${line.account_id}`;
+      const trial = trialMap.get(trialKey) ?? {
+        office_id: t.office_id,
+        office_code: t.office_code,
+        account_id: line.account_id,
+        account_code: line.account_code,
+        account_name: line.account_name,
+        account_type: line.account_type,
+        debit_total: 0,
+        credit_total: 0,
+        net_balance: 0,
+      };
+      trial.debit_total += line.debit;
+      trial.credit_total += line.credit;
+      trial.net_balance = trial.debit_total - trial.credit_total;
+      trialMap.set(trialKey, trial);
+
+      glRows.push({
+        date: t.transaction_date,
+        transaction_number: t.transaction_number,
+        office_id: t.office_id,
+        office_code: t.office_code,
+        account_id: line.account_id,
+        account_code: line.account_code,
+        account_name: line.account_name,
+        debit: line.debit,
+        credit: line.credit,
+      });
+
+      const signed = signedLineAmount(line.debit, line.credit, t.type);
+      if (isExpenseType(line.account_type)) {
+        const expenseKey = `${t.office_id}::${line.account_id}`;
+        const expense = expenseMap.get(expenseKey) ?? {
+          office_id: t.office_id,
+          office_code: t.office_code,
+          account_id: line.account_id,
+          account_code: line.account_code,
+          account_name: line.account_name,
+          expense_total: 0,
+        };
+        expense.expense_total += signed;
+        expenseMap.set(expenseKey, expense);
+        expenseTotal += signed;
+      } else if (isIncomeType(line.account_type)) {
+        incomeTotal += -signed;
+      }
+    }
+  }
+
+  const trial_balance = Array.from(trialMap.values()).sort((a, b) => {
+    const off = a.office_code.localeCompare(b.office_code);
+    if (off !== 0) {
+      return off;
+    }
+    return a.account_code.localeCompare(b.account_code);
+  });
+
+  const headwise_expense = Array.from(expenseMap.values())
+    .filter((r) => r.expense_total !== 0)
+    .sort((a, b) => {
+      const off = a.office_code.localeCompare(b.office_code);
+      if (off !== 0) {
+        return off;
+      }
+      return a.account_code.localeCompare(b.account_code);
+    });
+
+  const general_ledger: ReportGeneralLedgerRow[] = [];
+  const runningByAccount = new Map<string, number>();
+  const sortedGl = glRows.sort((a, b) => {
+    const dateCmp = a.date.localeCompare(b.date);
+    if (dateCmp !== 0) {
+      return dateCmp;
+    }
+    const txnCmp = a.transaction_number.localeCompare(b.transaction_number);
+    if (txnCmp !== 0) {
+      return txnCmp;
+    }
+    return a.account_code.localeCompare(b.account_code);
+  });
+  for (const row of sortedGl) {
+    const key = `${row.office_id}::${row.account_id}`;
+    const next = (runningByAccount.get(key) ?? 0) + (row.debit - row.credit);
+    runningByAccount.set(key, next);
+    general_ledger.push({
+      ...row,
+      running_balance: next,
+    });
+  }
+
+  const reconciliation: ReportReconciliationRow[] = balances
+    .filter((b) => isCashOrBank(b.account_type))
+    .map((b) => ({
+      office_id: b.office_id,
+      office_code: b.office_code,
+      account_id: b.account_id,
+      account_code: b.account_code,
+      account_name: b.account_name,
+      account_type: b.account_type,
+      ledger_balance: b.balance,
+      statement_amount: null,
+      difference: null,
+      status: "PENDING_STATEMENT",
+    }))
+    .sort((a, b) => {
+      const off = a.office_code.localeCompare(b.office_code);
+      if (off !== 0) {
+        return off;
+      }
+      return a.account_code.localeCompare(b.account_code);
+    });
+
+  const profit_and_loss: ReportProfitAndLoss = {
+    income_total: Number(incomeTotal.toFixed(2)),
+    expense_total: Number(expenseTotal.toFixed(2)),
+    net_profit: Number((incomeTotal - expenseTotal).toFixed(2)),
+  };
+
   return {
     filters: {
       from: query.from,
       to: query.to,
       office_id: query.office_id,
       account_id: query.account_id,
+      report_type: query.report_type,
     },
     transactions,
     balances,
     cash_flow,
+    trial_balance,
+    headwise_expense,
+    reconciliation,
+    general_ledger,
+    profit_and_loss,
   };
 }

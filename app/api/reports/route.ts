@@ -30,6 +30,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     office_id: searchParams.get("office_id") ?? "",
     account_id: searchParams.get("account_id") ?? "",
     format: searchParams.get("format") ?? undefined,
+    report_type: searchParams.get("report_type") ?? undefined,
   };
 
   const parsed = reportQuerySchema.safeParse(raw);
@@ -48,7 +49,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 
-  const base = `report-${filenameSafe(bundle.filters.from)}_${filenameSafe(bundle.filters.to)}`;
+  const base = `report-${filenameSafe(bundle.filters.report_type)}-${filenameSafe(bundle.filters.from)}_${filenameSafe(bundle.filters.to)}`;
 
   if (parsed.data.format === "xlsx") {
     const buf = await exportReportExcel(bundle);

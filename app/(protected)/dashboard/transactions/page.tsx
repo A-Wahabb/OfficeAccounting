@@ -3,8 +3,7 @@ import Link from "next/link";
 import {
   canApprove,
   canCreateTransaction,
-  canPost,
-  canReverse,
+  canReject,
 } from "@/lib/auth/transaction-permissions";
 import { getServerSession } from "@/lib/auth/session";
 import { ROUTES } from "@/lib/constants/routes";
@@ -39,8 +38,8 @@ export default async function TransactionsPage({
             <p className="text-sm text-neutral-600 dark:text-neutral-400">
               Numbers are assigned automatically (
               <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">TRX-YYYY-#####</code>
-              ). Workflow: PENDING → manager approves → APPROVED → post → POSTED. Deleting rows is not
-              allowed; use <strong>Reverse</strong> on posted entries.
+              ). Workflow: accountant creates <strong>PENDING</strong> transactions, then admin/manager
+              either <strong>APPROVE</strong> or <strong>REJECT</strong>.
             </p>
           </div>
           <div className="flex flex-wrap gap-3 text-sm">
@@ -68,8 +67,7 @@ export default async function TransactionsPage({
         transactions={transactions}
         capabilities={{
           canApprove: canApprove(roles),
-          canPost: canPost(roles),
-          canReverse: canReverse(roles),
+          canReject: canReject(roles),
         }}
       />
     </div>

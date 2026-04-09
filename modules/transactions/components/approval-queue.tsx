@@ -15,15 +15,13 @@ export function ApprovalQueue({ transactions }: ApprovalQueueProps) {
   return (
     <div className="space-y-3">
       <p className="text-sm text-neutral-600 dark:text-neutral-400">
-        Approve to move transactions to <strong>APPROVED</strong>. Posting is done separately after
-        approval.
+        Manager/Admin can approve or reject pending transactions.
       </p>
       <TransactionList
         transactions={transactions}
         capabilities={{
           canApprove: true,
-          canPost: false,
-          canReverse: false,
+          canReject: true,
         }}
         emptyMessage="No transactions waiting for approval."
       />

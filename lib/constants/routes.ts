@@ -3,6 +3,7 @@ export const ROUTES = {
   home: "/",
   login: "/login",
   dashboard: "/dashboard",
+  dashboardOverview: "/dashboard/overview",
   dashboardAdmin: "/dashboard/admin",
   dashboardManager: "/dashboard/manager",
   dashboardOffices: "/dashboard/offices",
@@ -12,6 +13,13 @@ export const ROUTES = {
   dashboardTransactionsApprovals: "/dashboard/transactions/approvals",
   dashboardAssets: "/dashboard/assets",
   dashboardCashClosings: "/dashboard/cash-closings",
+  dashboardReports: "/dashboard/reports",
+  dashboardReportsTrialBalance: "/dashboard/reports/trial_balance",
+  dashboardReportsHeadwiseExpense: "/dashboard/reports/headwise_expense",
+  dashboardReportsReconciliation: "/dashboard/reports/reconciliation",
+  dashboardReportsGeneralLedger: "/dashboard/reports/general_ledger",
+  dashboardReportsProfitAndLoss: "/dashboard/reports/profit_and_loss",
+  dashboardReportsCashFlow: "/dashboard/reports/cash_flow",
   /** GET ?from=&to=&office_id=&account_id=&format=json|xlsx|pdf (session required) */
   apiReports: "/api/reports",
 } as const;

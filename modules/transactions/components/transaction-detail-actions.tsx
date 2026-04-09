@@ -4,7 +4,10 @@ import { useMutation } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { approveTransactionAction } from "@/app/actions/transactions";
+import {
+  approveTransactionAction,
+  rejectTransactionAction,
+} from "@/app/actions/transactions";
 import type { TransactionSummary } from "@/types/transaction";
 
 type TransactionDetailActionsProps = {
@@ -12,6 +15,7 @@ type TransactionDetailActionsProps = {
   status: TransactionSummary["status"];
   type: TransactionSummary["type"];
   canApprove: boolean;
+  canReject: boolean;
 };
 
 export function TransactionDetailActions({
@@ -19,6 +23,7 @@ export function TransactionDetailActions({
   status,
   type,
   canApprove,
+  canReject,
 }: TransactionDetailActionsProps) {
   const router = useRouter();
   const [comment, setComment] = useState("");
@@ -37,8 +42,22 @@ export function TransactionDetailActions({
     },
   });
 
+  const rejectMut = useMutation({
+    mutationFn: () => rejectTransactionAction(transactionId, comment),
+    onSuccess: (r) => {
+      if (r.ok) {
+        setError(null);
+        setComment("");
+        router.refresh();
+      } else {
+        setError(r.error);
+      }
+    },
+  });
+
   const showApprove = canApprove && status === "PENDING" && type !== "REVERSAL";
-  if (!showApprove) {
+  const showReject = canReject && status === "PENDING";
+  if (!showApprove && !showReject) {
     return null;
   }
 
@@ -62,6 +81,16 @@ export function TransactionDetailActions({
         >
           {approveMut.isPending ? "Approving..." : "Approve transaction"}
         </button>
+        {showReject && (
+          <button
+            type="button"
+            disabled={rejectMut.isPending}
+            onClick={() => rejectMut.mutate()}
+            className="rounded border border-rose-400 px-3 py-1.5 text-sm text-rose-700 hover:bg-rose-50 disabled:opacity-60 dark:border-rose-700 dark:text-rose-300 dark:hover:bg-rose-950/40"
+          >
+            {rejectMut.isPending ? "Rejecting..." : "Reject transaction"}
+          </button>
+        )}
       </div>
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
     </div>

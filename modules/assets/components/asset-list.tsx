@@ -106,31 +106,14 @@ export function AssetList({ assets, offices, onEdit }: AssetListProps) {
                     )}
                   </td>
                   <td className="px-3 py-2">
-                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                      {onEdit && !a.disposed_at && (
-                        <button
-                          type="button"
-                          className="text-left text-xs text-neutral-800 underline-offset-2 hover:underline dark:text-neutral-200"
-                          onClick={() => onEdit(a)}
-                        >
-                          Edit
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        className="text-left text-xs text-blue-700 underline-offset-2 hover:underline dark:text-blue-400"
-                        onClick={() => void toggleHistory(a.id)}
-                      >
-                        {expandedId === a.id ? "Hide history" : "History"}
-                      </button>
-                      {!a.disposed_at && (
-                        <LifecycleActions
-                          asset={a}
-                          offices={offices}
-                          onDone={() => router.refresh()}
-                        />
-                      )}
-                    </div>
+                    <LifecycleActions
+                      asset={a}
+                      offices={offices}
+                      onEdit={onEdit}
+                      historyOpen={expandedId === a.id}
+                      onToggleHistory={() => void toggleHistory(a.id)}
+                      onDone={() => router.refresh()}
+                    />
                   </td>
                 </tr>
                 {expandedId === a.id && (
@@ -174,23 +157,37 @@ export function AssetList({ assets, offices, onEdit }: AssetListProps) {
 function LifecycleActions({
   asset,
   offices,
+  onEdit,
+  historyOpen,
+  onToggleHistory,
   onDone,
 }: {
   asset: AssetListRow;
   offices: Pick<Office, "id" | "name" | "code">[];
+  onEdit?: (row: AssetListRow) => void;
+  historyOpen: boolean;
+  onToggleHistory: () => void;
   onDone: () => void;
 }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [modal, setModal] = useState<"transfer" | "maintenance" | "dispose" | null>(
+    null,
+  );
   const [transferTo, setTransferTo] = useState("");
+  const [transferNotes, setTransferNotes] = useState("");
   const [maintNotes, setMaintNotes] = useState("");
+  const [disposeNotes, setDisposeNotes] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   const transferMut = useMutation({
-    mutationFn: () =>
-      transferAssetAction(asset.id, transferTo, null),
+    mutationFn: () => transferAssetAction(asset.id, transferTo, transferNotes || null),
     onSuccess: (r) => {
       if (r.ok) {
         setErr(null);
         setTransferTo("");
+        setTransferNotes("");
+        setModal(null);
+        setMenuOpen(false);
         onDone();
       } else {
         setErr(r.error);
@@ -204,6 +201,8 @@ function LifecycleActions({
       if (r.ok) {
         setErr(null);
         setMaintNotes("");
+        setModal(null);
+        setMenuOpen(false);
         onDone();
       } else {
         setErr(r.error);
@@ -212,10 +211,13 @@ function LifecycleActions({
   });
 
   const disposeMut = useMutation({
-    mutationFn: () => disposeAssetAction(asset.id, null),
+    mutationFn: () => disposeAssetAction(asset.id, disposeNotes || null),
     onSuccess: (r) => {
       if (r.ok) {
         setErr(null);
+        setDisposeNotes("");
+        setModal(null);
+        setMenuOpen(false);
         onDone();
       } else {
         setErr(r.error);
@@ -226,62 +228,195 @@ function LifecycleActions({
   const otherOffices = offices.filter((o) => o.id !== asset.office_id);
 
   return (
-    <div className="flex min-w-[12rem] flex-col gap-2 border-l border-neutral-200 pl-2 dark:border-neutral-700">
+    <div className="relative">
       {err && <p className="text-xs text-red-600">{err}</p>}
-      <div className="flex flex-wrap items-center gap-1">
-        <select
-          value={transferTo}
-          onChange={(e) => setTransferTo(e.target.value)}
-          className="max-w-[10rem] rounded border border-neutral-300 px-1 py-0.5 text-xs dark:border-neutral-600 dark:bg-neutral-900"
-        >
-          <option value="">Transfer to…</option>
-          {otherOffices.map((o) => (
-            <option key={o.id} value={o.id}>
-              {o.code}
-            </option>
-          ))}
-        </select>
-        <button
-          type="button"
-          disabled={!transferTo || transferMut.isPending}
-          onClick={() => transferMut.mutate()}
-          className="rounded bg-neutral-800 px-2 py-0.5 text-xs text-white disabled:opacity-50 dark:bg-neutral-200 dark:text-neutral-900"
-        >
-          Go
-        </button>
-      </div>
-      <div className="flex flex-wrap items-end gap-1">
-        <input
-          placeholder="Maintenance notes"
-          value={maintNotes}
-          onChange={(e) => setMaintNotes(e.target.value)}
-          className="min-w-[8rem] flex-1 rounded border border-neutral-300 px-2 py-0.5 text-xs dark:border-neutral-600 dark:bg-neutral-900"
-        />
-        <button
-          type="button"
-          disabled={maintMut.isPending || !maintNotes.trim()}
-          onClick={() => maintMut.mutate()}
-          className="rounded border border-neutral-400 px-2 py-0.5 text-xs dark:border-neutral-500"
-        >
-          Log
-        </button>
-      </div>
       <button
         type="button"
-        disabled={disposeMut.isPending}
-        onClick={() => {
-          if (
-            typeof window !== "undefined" &&
-            !window.confirm("Mark this asset as disposed?")
-          ) {
-            return;
-          }
-          disposeMut.mutate();
-        }}
-        className="w-fit text-xs text-red-700 underline-offset-2 hover:underline dark:text-red-400"
+        onClick={() => setMenuOpen((v) => !v)}
+        className="rounded p-1 text-neutral-600 transition-colors hover:bg-neutral-100 hover:text-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-neutral-100"
+        aria-label="Open asset actions"
+        aria-expanded={menuOpen}
       >
-        Dispose
+        ...
       </button>
+
+      {menuOpen && (
+        <div className="absolute right-0 top-8 z-10 min-w-40 rounded-md border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+          {onEdit && (
+            <button
+              type="button"
+              onClick={() => {
+                onEdit(asset);
+                setMenuOpen(false);
+              }}
+              className="block w-full rounded px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-100 dark:text-neutral-200 dark:hover:bg-neutral-800"
+            >
+              Edit
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              onToggleHistory();
+              setMenuOpen(false);
+            }}
+            className="block w-full rounded px-3 py-2 text-left text-xs text-blue-700 hover:bg-neutral-100 dark:text-blue-300 dark:hover:bg-neutral-800"
+          >
+            {historyOpen ? "Hide history" : "History"}
+          </button>
+          <button
+            type="button"
+            disabled={!!asset.disposed_at}
+            onClick={() => {
+              setModal("transfer");
+              setMenuOpen(false);
+            }}
+            className="block w-full rounded px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+          >
+            Transfer
+          </button>
+          <button
+            type="button"
+            disabled={!!asset.disposed_at}
+            onClick={() => {
+              setModal("maintenance");
+              setMenuOpen(false);
+            }}
+            className="block w-full rounded px-3 py-2 text-left text-xs text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-neutral-200 dark:hover:bg-neutral-800"
+          >
+            Maintenance
+          </button>
+          <button
+            type="button"
+            disabled={!!asset.disposed_at}
+            onClick={() => {
+              setModal("dispose");
+              setMenuOpen(false);
+            }}
+            className="block w-full rounded px-3 py-2 text-left text-xs text-rose-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:text-rose-300 dark:hover:bg-neutral-800"
+          >
+            Dispose
+          </button>
+        </div>
+      )}
+
+      {modal === "transfer" && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              Transfer asset
+            </h3>
+            <div className="mt-3 space-y-3">
+              <select
+                value={transferTo}
+                onChange={(e) => setTransferTo(e.target.value)}
+                className="w-full rounded border border-neutral-300 px-2 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-950"
+              >
+                <option value="">Select destination office</option>
+                {otherOffices.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.code} - {o.name}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={transferNotes}
+                onChange={(e) => setTransferNotes(e.target.value)}
+                placeholder="Notes (optional)"
+                className="w-full rounded border border-neutral-300 px-2 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-950"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModal(null)}
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!transferTo || transferMut.isPending}
+                  onClick={() => transferMut.mutate()}
+                  className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+                >
+                  {transferMut.isPending ? "Saving..." : "Confirm transfer"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal === "maintenance" && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              Log maintenance
+            </h3>
+            <div className="mt-3 space-y-3">
+              <textarea
+                value={maintNotes}
+                onChange={(e) => setMaintNotes(e.target.value)}
+                placeholder="Maintenance notes"
+                rows={4}
+                className="w-full rounded border border-neutral-300 px-2 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-950"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModal(null)}
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!maintNotes.trim() || maintMut.isPending}
+                  onClick={() => maintMut.mutate()}
+                  className="rounded bg-neutral-900 px-3 py-1.5 text-sm text-white disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-900"
+                >
+                  {maintMut.isPending ? "Saving..." : "Save maintenance"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {modal === "dispose" && (
+        <div className="fixed inset-0 z-20 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-lg border border-neutral-200 bg-white p-4 dark:border-neutral-700 dark:bg-neutral-900">
+            <h3 className="text-sm font-semibold text-neutral-900 dark:text-neutral-100">
+              Dispose asset
+            </h3>
+            <div className="mt-3 space-y-3">
+              <input
+                value={disposeNotes}
+                onChange={(e) => setDisposeNotes(e.target.value)}
+                placeholder="Disposal notes (optional)"
+                className="w-full rounded border border-neutral-300 px-2 py-2 text-sm dark:border-neutral-600 dark:bg-neutral-950"
+              />
+              <div className="flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setModal(null)}
+                  className="rounded border border-neutral-300 px-3 py-1.5 text-sm dark:border-neutral-600"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={disposeMut.isPending}
+                  onClick={() => disposeMut.mutate()}
+                  className="rounded bg-rose-700 px-3 py-1.5 text-sm text-white disabled:opacity-50 hover:bg-rose-800"
+                >
+                  {disposeMut.isPending ? "Disposing..." : "Confirm disposal"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

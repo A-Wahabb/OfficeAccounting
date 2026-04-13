@@ -305,6 +305,9 @@ export async function exportReportPdf(bundle: ReportBundle): Promise<Buffer> {
   const generatedAt = new Date().toISOString().slice(0, 19).replace("T", " ");
   for (let i = 0; i < pages.length; i += 1) {
     const p = pages[i];
+    if (!p) {
+      continue;
+    }
     p.drawLine({
       start: { x: PAGE_MARGIN, y: PAGE_MARGIN - 8 },
       end: { x: PAGE_WIDTH - PAGE_MARGIN, y: PAGE_MARGIN - 8 },

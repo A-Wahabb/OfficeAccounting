@@ -116,10 +116,10 @@ function buildSummaryCards(
     ];
   }
   if (reportType === "reconciliation") {
-    const matched = bundle.reconciliation.filter((r) => r.status === "MATCHED").length;
+    const totalLedger = bundle.reconciliation.reduce((s, r) => s + r.ledger_balance, 0);
     return [
       { label: "Rows", value: String(bundle.reconciliation.length) },
-      { label: "Matched", value: String(matched) },
+      { label: "Total Ledger", value: formatAmount(totalLedger) },
     ];
   }
   if (reportType === "general_ledger") {

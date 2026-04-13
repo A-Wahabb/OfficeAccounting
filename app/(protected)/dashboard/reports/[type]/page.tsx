@@ -1,9 +1,12 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { ReportOfficeAccountFilters } from "@/components/reports/report-office-account-filters";
 import { requireAccountingRole } from "@/lib/auth/guards";
 import { ROUTES } from "@/lib/constants/routes";
 import { reportQuerySchema } from "@/lib/reports/params";
+import { listActiveAccountsForReportFilter } from "@/services/account";
+import { listOffices } from "@/services/office";
 import { buildReportBundle } from "@/services/reporting";
 import type { ReportType } from "@/types/reporting";
 
@@ -90,6 +93,11 @@ export default async function ReportTypePage({
 }: ReportPageProps) {
   await requireAccountingRole();
 
+  const [offices, accounts] = await Promise.all([
+    listOffices(),
+    listActiveAccountsForReportFilter(),
+  ]);
+
   const typeRaw = params.type;
   if (!isReportTypePage(typeRaw)) {
     notFound();
@@ -165,30 +173,13 @@ export default async function ReportTypePage({
             className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none ring-offset-2 focus:ring-2 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
           />
         </label>
-        <label className="space-y-1">
-          <span className="text-sm text-neutral-700 dark:text-neutral-300">
-            Office ID (optional)
-          </span>
-          <input
-            name="office_id"
-            type="text"
-            defaultValue={officeId}
-            placeholder="UUID"
-            className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none ring-offset-2 focus:ring-2 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
-        <label className="space-y-1">
-          <span className="text-sm text-neutral-700 dark:text-neutral-300">
-            Account ID (optional)
-          </span>
-          <input
-            name="account_id"
-            type="text"
-            defaultValue={accountId}
-            placeholder="UUID"
-            className="w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none ring-offset-2 focus:ring-2 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
-          />
-        </label>
+        <ReportOfficeAccountFilters
+          key={`${officeId}-${accountId}`}
+          offices={offices}
+          accounts={accounts}
+          defaultOfficeId={officeId}
+          defaultAccountId={accountId}
+        />
         <div className="md:col-span-2">
           <button
             type="submit"

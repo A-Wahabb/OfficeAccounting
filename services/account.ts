@@ -86,6 +86,24 @@ export async function listAccountsWithBalances(): Promise<AccountWithBalance[]> 
   });
 }
 
+/** Active accounts for report filters (searchable dropdown by code/name). */
+export async function listActiveAccountsForReportFilter(): Promise<
+  Pick<Account, "id" | "code" | "name">[]
+> {
+  const supabase = await createSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("id, code, name")
+    .eq("is_active", true)
+    .order("code", { ascending: true });
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []) as Pick<Account, "id" | "code" | "name">[];
+}
+
 /** Active accounts usable for a transaction in an office (shared + office-specific). */
 export async function listAccountsForOffice(officeId: string): Promise<Account[]> {
   const supabase = await createSupabaseServerClient();

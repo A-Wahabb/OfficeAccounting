@@ -22,6 +22,7 @@ export type ReportTransaction = {
   transaction_number: string;
   office_id: string;
   office_code: string;
+  office_name: string;
   type: string;
   transaction_date: string;
   currency: string;
@@ -36,6 +37,7 @@ export type ReportBalanceRow = {
   account_type: string;
   office_id: string;
   office_code: string;
+  office_name: string;
   balance: number;
 };
 
@@ -48,6 +50,7 @@ export type ReportCashFlowRow = {
 export type ReportTrialBalanceRow = {
   office_id: string;
   office_code: string;
+  office_name: string;
   account_id: string;
   account_code: string;
   account_name: string;
@@ -60,6 +63,7 @@ export type ReportTrialBalanceRow = {
 export type ReportHeadwiseExpenseRow = {
   office_id: string;
   office_code: string;
+  office_name: string;
   account_id: string;
   account_code: string;
   account_name: string;
@@ -69,6 +73,7 @@ export type ReportHeadwiseExpenseRow = {
 export type ReportReconciliationRow = {
   office_id: string;
   office_code: string;
+  office_name: string;
   account_id: string;
   account_code: string;
   account_name: string;
@@ -84,6 +89,7 @@ export type ReportGeneralLedgerRow = {
   transaction_number: string;
   office_id: string;
   office_code: string;
+  office_name: string;
   account_id: string;
   account_code: string;
   account_name: string;

@@ -17,24 +17,24 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 async function loadOfficeMap(
   supabase: SupabaseClient,
   ids: string[],
-): Promise<Map<string, string>> {
+): Promise<Map<string, { code: string; name: string }>> {
   const unique = Array.from(new Set(ids.filter(Boolean)));
   if (unique.length === 0) {
     return new Map();
   }
   const { data, error } = await supabase
     .from("offices")
-    .select("id, code")
+    .select("id, code, name")
     .in("id", unique);
 
   if (error) {
     throw new Error(error.message);
   }
 
-  const m = new Map<string, string>();
+  const m = new Map<string, { code: string; name: string }>();
   for (const r of data ?? []) {
-    const row = r as { id: string; code: string };
-    m.set(row.id, row.code);
+    const row = r as { id: string; code: string; name: string };
+    m.set(row.id, { code: row.code, name: row.name });
   }
   return m;
 }
@@ -136,6 +136,7 @@ export async function buildReportBundle(
       transaction_number: row.transaction_number as string,
       office_id: row.office_id as string,
       office_code: "",
+      office_name: "",
       type: row.type as string,
       transaction_date: row.transaction_date as string,
       currency: row.currency as string,
@@ -156,7 +157,8 @@ export async function buildReportBundle(
   const officeCodes = await loadOfficeMap(supabase, officeIds);
   transactions = transactions.map((t) => ({
     ...t,
-    office_code: officeCodes.get(t.office_id) ?? "",
+    office_code: officeCodes.get(t.office_id)?.code ?? "",
+    office_name: officeCodes.get(t.office_id)?.name ?? "",
   }));
 
   /** Balances: current ledger balances from account_balances (RLS-scoped). */
@@ -213,7 +215,8 @@ export async function buildReportBundle(
       account_name: acc.name,
       account_type: acc.account_type,
       office_id: row.office_id,
-      office_code: balOfficeCodes.get(row.office_id) ?? "",
+      office_code: balOfficeCodes.get(row.office_id)?.code ?? "",
+      office_name: balOfficeCodes.get(row.office_id)?.name ?? "",
       balance: Number(row.balance),
     };
   });
@@ -250,6 +253,7 @@ export async function buildReportBundle(
       const trial = trialMap.get(trialKey) ?? {
         office_id: t.office_id,
         office_code: t.office_code,
+        office_name: t.office_name,
         account_id: line.account_id,
         account_code: line.account_code,
         account_name: line.account_name,
@@ -268,6 +272,7 @@ export async function buildReportBundle(
         transaction_number: t.transaction_number,
         office_id: t.office_id,
         office_code: t.office_code,
+        office_name: t.office_name,
         account_id: line.account_id,
         account_code: line.account_code,
         account_name: line.account_name,
@@ -281,6 +286,7 @@ export async function buildReportBundle(
         const expense = expenseMap.get(expenseKey) ?? {
           office_id: t.office_id,
           office_code: t.office_code,
+          office_name: t.office_name,
           account_id: line.account_id,
           account_code: line.account_code,
           account_name: line.account_name,
@@ -296,7 +302,7 @@ export async function buildReportBundle(
   }
 
   const trial_balance = Array.from(trialMap.values()).sort((a, b) => {
-    const off = a.office_code.localeCompare(b.office_code);
+    const off = a.office_name.localeCompare(b.office_name);
     if (off !== 0) {
       return off;
     }
@@ -306,7 +312,7 @@ export async function buildReportBundle(
   const headwise_expense = Array.from(expenseMap.values())
     .filter((r) => r.expense_total !== 0)
     .sort((a, b) => {
-      const off = a.office_code.localeCompare(b.office_code);
+      const off = a.office_name.localeCompare(b.office_name);
       if (off !== 0) {
         return off;
       }
@@ -341,6 +347,7 @@ export async function buildReportBundle(
     .map((b) => ({
       office_id: b.office_id,
       office_code: b.office_code,
+      office_name: b.office_name,
       account_id: b.account_id,
       account_code: b.account_code,
       account_name: b.account_name,
@@ -351,7 +358,7 @@ export async function buildReportBundle(
       status: "PENDING_STATEMENT" as const,
     }))
     .sort((a, b) => {
-      const off = a.office_code.localeCompare(b.office_code);
+      const off = a.office_name.localeCompare(b.office_name);
       if (off !== 0) {
         return off;
       }

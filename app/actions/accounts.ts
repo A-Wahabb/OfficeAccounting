@@ -55,12 +55,14 @@ export async function createAccountAction(
     return { ok: false, error: "Not signed in" };
   }
 
-  const { error } = await createAccount(user.id, parsed.data);
+  const { account, error } = await createAccount(user.id, parsed.data);
+  if (account) {
+    revalidateAccounts();
+  }
   if (error) {
     return { ok: false, error };
   }
 
-  revalidateAccounts();
   return { ok: true };
 }
 

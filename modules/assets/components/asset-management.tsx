@@ -18,6 +18,7 @@ function listRowToAsset(row: AssetListRow): Asset {
     name: row.name,
     asset_kind: row.asset_kind,
     office_id: row.office_id,
+    account_id: row.account_id,
     purchase_date: row.purchase_date,
     purchase_value: row.purchase_value,
     current_value: row.current_value,

@@ -12,6 +12,7 @@ const ASSET_SELECT = `
   name,
   asset_kind,
   office_id,
+  account_id,
   purchase_date,
   purchase_value,
   current_value,
@@ -27,11 +28,90 @@ function mapAsset(row: Record<string, unknown>): Asset {
     name: row.name as string,
     asset_kind: row.asset_kind as Asset["asset_kind"],
     office_id: row.office_id as string,
+    account_id: (row.account_id as string | null) ?? null,
     purchase_date: (row.purchase_date as string | null) ?? null,
     purchase_value: Number(row.purchase_value),
     current_value: Number(row.current_value),
     disposed_at: (row.disposed_at as string | null) ?? null,
   };
+}
+
+async function assertCashBankAccountForOffice(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  officeId: string,
+  accountId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data, error } = await supabase
+    .from("accounts")
+    .select("id, account_type, office_id")
+    .eq("id", accountId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return { ok: false, error: "Ledger account not found" };
+  }
+  const row = data as { account_type: string; office_id: string | null };
+  const t = row.account_type.toUpperCase();
+  if (t !== "CASH" && t !== "BANK") {
+    return { ok: false, error: "Ledger account must be CASH or BANK type" };
+  }
+  if (row.office_id != null && row.office_id !== officeId) {
+    return { ok: false, error: "That account belongs to a different office" };
+  }
+  return { ok: true };
+}
+
+/** Sets initial ledger balance for (account, office) when registering a cash/bank asset. */
+async function applyOpeningBalanceForNewAsset(
+  supabase: Awaited<ReturnType<typeof createSupabaseServerClient>>,
+  userId: string,
+  officeId: string,
+  accountId: string,
+  openingBalance: number,
+): Promise<{ error: string | null }> {
+  if (openingBalance === 0) {
+    return { error: null };
+  }
+
+  const { data: existing, error: selErr } = await supabase
+    .from("account_balances")
+    .select("id, balance")
+    .eq("account_id", accountId)
+    .eq("office_id", officeId)
+    .maybeSingle();
+
+  if (selErr) {
+    return { error: selErr.message };
+  }
+
+  if (existing) {
+    const bal = Number((existing as { balance: string | number }).balance);
+    if (!Number.isFinite(bal)) {
+      return { error: "Invalid existing balance for this account" };
+    }
+    if (bal !== 0) {
+      return {
+        error:
+          "This ledger account already has a non-zero balance for this office. Pick another account or adjust via transactions.",
+      };
+    }
+    const { error: upErr } = await supabase
+      .from("account_balances")
+      .update({
+        balance: openingBalance,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", (existing as { id: string }).id);
+    return { error: upErr?.message ?? null };
+  }
+
+  const { error: insErr } = await supabase.from("account_balances").insert({
+    created_by: userId,
+    account_id: accountId,
+    office_id: officeId,
+    balance: openingBalance,
+  });
+  return { error: insErr?.message ?? null };
 }
 
 async function loadOfficeMap(
@@ -109,6 +189,23 @@ export async function createAsset(
 ): Promise<{ asset: Asset | null; error: string | null }> {
   const supabase = await createSupabaseServerClient();
 
+  const isCashBank = input.asset_kind === "CASH" || input.asset_kind === "BANK";
+  let linkedAccountId: string | null = null;
+  if (isCashBank) {
+    if (!input.account_id) {
+      return { asset: null, error: "Ledger account is required for cash or bank assets" };
+    }
+    const accOk = await assertCashBankAccountForOffice(
+      supabase,
+      input.office_id,
+      input.account_id,
+    );
+    if (!accOk.ok) {
+      return { asset: null, error: accOk.error };
+    }
+    linkedAccountId = input.account_id;
+  }
+
   for (let attempt = 0; attempt < 5; attempt++) {
     const asset_code = generateAssetCode();
 
@@ -117,7 +214,7 @@ export async function createAsset(
       .insert({
         created_by: userId,
         office_id: input.office_id,
-        account_id: null,
+        account_id: linkedAccountId,
         asset_code,
         name: input.name,
         asset_kind: input.asset_kind,
@@ -141,11 +238,29 @@ export async function createAsset(
         notes: null,
         from_office_id: null,
         to_office_id: input.office_id,
-        metadata: {},
+        metadata: isCashBank
+          ? { opening_balance: input.opening_balance, account_id: linkedAccountId }
+          : {},
       });
 
       if (evErr) {
         return { asset: null, error: evErr.message };
+      }
+
+      if (isCashBank && linkedAccountId) {
+        const balErr = await applyOpeningBalanceForNewAsset(
+          supabase,
+          userId,
+          input.office_id,
+          linkedAccountId,
+          input.opening_balance,
+        );
+        if (balErr.error) {
+          return {
+            asset,
+            error: `${balErr.error} The asset was saved; set the ledger balance from Chart of Accounts if needed.`,
+          };
+        }
       }
 
       return { asset, error: null };

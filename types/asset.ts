@@ -1,4 +1,10 @@
-export const ASSET_KINDS = ["EQUIPMENT", "COMPUTER", "PROPERTY"] as const;
+export const ASSET_KINDS = [
+  "EQUIPMENT",
+  "COMPUTER",
+  "PROPERTY",
+  "CASH",
+  "BANK",
+] as const;
 
 export type AssetKind = (typeof ASSET_KINDS)[number];
 
@@ -10,6 +16,7 @@ export type Asset = {
   name: string;
   asset_kind: AssetKind;
   office_id: string;
+  account_id: string | null;
   purchase_date: string | null;
   purchase_value: number;
   current_value: number;

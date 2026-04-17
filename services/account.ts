@@ -8,6 +8,7 @@ const ACCOUNT_SELECT = `
   name,
   account_type,
   office_id,
+  opening_balance,
   currency,
   is_active,
   created_at,
@@ -20,17 +21,23 @@ function mapAccount(row: {
   name: string;
   account_type: string;
   office_id: string | null;
+  opening_balance: string | number;
   currency: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
 }): Account {
+  const ob =
+    typeof row.opening_balance === "string"
+      ? parseFloat(row.opening_balance)
+      : row.opening_balance;
   return {
     id: row.id,
     code: row.code,
     name: row.name,
     account_type: row.account_type as Account["account_type"],
     office_id: row.office_id,
+    opening_balance: Number.isFinite(ob) ? ob : 0,
     currency: row.currency,
     is_active: row.is_active,
     created_at: row.created_at,
@@ -39,7 +46,8 @@ function mapAccount(row: {
 }
 
 /**
- * List accounts ordered by code. Balances are summed from account_balances (updated when transactions POST).
+ * List accounts ordered by code.
+ * Final balance = account opening balance + posted transaction effects.
  */
 export async function listAccountsWithBalances(): Promise<AccountWithBalance[]> {
   const supabase = await createSupabaseServerClient();
@@ -79,9 +87,10 @@ export async function listAccountsWithBalances(): Promise<AccountWithBalance[]> 
 
   return rows.map((r) => {
     const a = mapAccount(r as Parameters<typeof mapAccount>[0]);
+    const fromTx = sumByAccount.get(a.id) ?? 0;
     return {
       ...a,
-      balance_total: sumByAccount.get(a.id) ?? 0,
+      balance_total: a.opening_balance + fromTx,
     };
   });
 }
@@ -142,6 +151,10 @@ export async function createAccount(
 ): Promise<{ account: Account | null; error: string | null }> {
   const supabase = await createSupabaseServerClient();
 
+  const isCashOrBank =
+    input.account_type === "CASH" || input.account_type === "BANK";
+  const openingBalance = isCashOrBank ? input.opening_balance : 0;
+
   const { data, error } = await supabase
     .from("accounts")
     .insert({
@@ -149,6 +162,7 @@ export async function createAccount(
       name: input.name,
       account_type: input.account_type,
       office_id: input.office_id,
+      opening_balance: openingBalance,
       currency: input.currency,
       is_active: input.is_active,
       created_by: userId,
@@ -161,10 +175,12 @@ export async function createAccount(
     return { account: null, error: error.message };
   }
 
-  return {
-    account: data ? mapAccount(data as Parameters<typeof mapAccount>[0]) : null,
-    error: null,
-  };
+  const account = data ? mapAccount(data as Parameters<typeof mapAccount>[0]) : null;
+  if (!account) {
+    return { account: null, error: "Account was not returned" };
+  }
+
+  return { account, error: null };
 }
 
 export async function updateAccount(

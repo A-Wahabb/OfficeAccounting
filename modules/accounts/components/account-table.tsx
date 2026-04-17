@@ -24,11 +24,11 @@ export function AccountTable({ accounts, onEdit }: AccountTableProps) {
           Chart of accounts
         </h2>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">
-          Balances sum all offices; posting a transaction updates{" "}
+          Total balance is account opening balance plus the sum of{" "}
           <code className="rounded bg-neutral-100 px-1 dark:bg-neutral-800">
             account_balances
           </code>{" "}
-          automatically.
+          from posted transactions per office.
         </p>
       </div>
       <div className="overflow-x-auto">

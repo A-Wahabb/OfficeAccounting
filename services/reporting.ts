@@ -61,6 +61,20 @@ function isCashOrBank(accountType: string): boolean {
   return t === "CASH" || t === "BANK";
 }
 
+function pickOpeningReceiver(
+  officeIds: string[],
+  officeFilter: string | null,
+): string | null {
+  if (officeIds.length === 0) {
+    return officeFilter;
+  }
+  if (officeFilter && officeIds.includes(officeFilter)) {
+    return officeFilter;
+  }
+  const sorted = [...officeIds].sort((a, b) => a.localeCompare(b));
+  return sorted[0] ?? null;
+}
+
 /** Approved transactions in [from, to], optional office/account filters. */
 export async function buildReportBundle(
   query: ReportQuery,
@@ -161,6 +175,13 @@ export async function buildReportBundle(
     office_name: officeCodes.get(t.office_id)?.name ?? "",
   }));
 
+  const txAccountIds = new Set<string>();
+  for (const t of transactions) {
+    for (const line of t.lines) {
+      txAccountIds.add(line.account_id);
+    }
+  }
+
   /** Balances: current ledger balances from account_balances (RLS-scoped). */
   let balQuery = supabase.from("account_balances").select(
     `
@@ -192,6 +213,52 @@ export async function buildReportBundle(
     new Set((balRows ?? []).map((r) => (r as { office_id: string }).office_id)),
   );
   const balOfficeCodes = await loadOfficeMap(supabase, balOfficeIds);
+  const balAccountIds = new Set<string>();
+  for (const r of balRows ?? []) {
+    const row = r as { account_id: string };
+    balAccountIds.add(row.account_id);
+  }
+
+  const allAccountIds = Array.from(
+    new Set([
+      ...Array.from(txAccountIds),
+      ...Array.from(balAccountIds),
+      ...(query.account_id ? [query.account_id] : []),
+    ]),
+  );
+  const accountOpeningById = new Map<string, number>();
+  const accountMetaById = new Map<
+    string,
+    { code: string; name: string; account_type: string; office_id: string | null }
+  >();
+  if (allAccountIds.length > 0) {
+    const { data: openingRows, error: openingErr } = await supabase
+      .from("accounts")
+      .select("id, code, name, account_type, office_id, opening_balance")
+      .in("id", allAccountIds);
+    if (openingErr) {
+      throw new Error(openingErr.message);
+    }
+    for (const r of openingRows ?? []) {
+      const row = r as {
+        id: string;
+        code: string;
+        name: string;
+        account_type: string;
+        office_id: string | null;
+        opening_balance: string | number;
+      };
+      const raw = row.opening_balance;
+      const n = typeof raw === "string" ? parseFloat(raw) : raw;
+      accountOpeningById.set(row.id, Number.isFinite(n) ? n : 0);
+      accountMetaById.set(row.id, {
+        code: row.code,
+        name: row.name,
+        account_type: row.account_type,
+        office_id: row.office_id,
+      });
+    }
+  }
 
   const balances: ReportBalanceRow[] = (balRows ?? []).map((r) => {
     const row = r as {
@@ -220,6 +287,54 @@ export async function buildReportBundle(
       balance: Number(row.balance),
     };
   });
+
+  const balanceOfficeIdsByAccount = new Map<string, Set<string>>();
+  for (const row of balances) {
+    const set = balanceOfficeIdsByAccount.get(row.account_id) ?? new Set<string>();
+    set.add(row.office_id);
+    balanceOfficeIdsByAccount.set(row.account_id, set);
+  }
+  const openingAppliedInBalance = new Set<string>();
+  for (const row of balances) {
+    const opening = accountOpeningById.get(row.account_id) ?? 0;
+    if (opening === 0 || openingAppliedInBalance.has(row.account_id)) {
+      continue;
+    }
+    const offices = Array.from(balanceOfficeIdsByAccount.get(row.account_id) ?? []);
+    const receiver = pickOpeningReceiver(offices, query.office_id);
+    if (receiver && row.office_id === receiver) {
+      row.balance += opening;
+      openingAppliedInBalance.add(row.account_id);
+    }
+  }
+  for (const [accountId, opening] of Array.from(accountOpeningById.entries())) {
+    if (opening === 0 || openingAppliedInBalance.has(accountId)) {
+      continue;
+    }
+    const meta = accountMetaById.get(accountId);
+    if (!meta) {
+      continue;
+    }
+    const receiverOfficeId =
+      query.office_id ?? meta.office_id ?? "shared";
+    balances.push({
+      account_id: accountId,
+      account_code: meta.code,
+      account_name: meta.name,
+      account_type: meta.account_type,
+      office_id: receiverOfficeId,
+      office_code:
+        receiverOfficeId === "shared"
+          ? "SHARED"
+          : (balOfficeCodes.get(receiverOfficeId)?.code ?? ""),
+      office_name:
+        receiverOfficeId === "shared"
+          ? "Shared"
+          : (balOfficeCodes.get(receiverOfficeId)?.name ?? ""),
+      balance: opening,
+    });
+    openingAppliedInBalance.add(accountId);
+  }
 
   /** Cash flow: daily net signed movement on CASH and BANK accounts (in range). */
   const cashByDate = new Map<string, number>();
@@ -309,6 +424,69 @@ export async function buildReportBundle(
     return a.account_code.localeCompare(b.account_code);
   });
 
+  const trialOfficeIdsByAccount = new Map<string, Set<string>>();
+  for (const row of trial_balance) {
+    const set = trialOfficeIdsByAccount.get(row.account_id) ?? new Set<string>();
+    set.add(row.office_id);
+    trialOfficeIdsByAccount.set(row.account_id, set);
+  }
+  const openingAppliedInTrial = new Set<string>();
+  for (const row of trial_balance) {
+    const opening = accountOpeningById.get(row.account_id) ?? 0;
+    if (opening === 0 || openingAppliedInTrial.has(row.account_id)) {
+      continue;
+    }
+    const offices = Array.from(trialOfficeIdsByAccount.get(row.account_id) ?? []);
+    const receiver = pickOpeningReceiver(offices, query.office_id);
+    if (receiver && row.office_id === receiver) {
+      row.net_balance += opening;
+      openingAppliedInTrial.add(row.account_id);
+    }
+  }
+  for (const [accountId, opening] of Array.from(accountOpeningById.entries())) {
+    if (opening === 0 || openingAppliedInTrial.has(accountId)) {
+      continue;
+    }
+    const meta = accountMetaById.get(accountId);
+    if (!meta) {
+      continue;
+    }
+    const receiverOfficeId =
+      query.office_id ?? meta.office_id ?? "shared";
+    const officeName =
+      receiverOfficeId === "shared"
+        ? "Shared"
+        : (officeCodes.get(receiverOfficeId)?.name ??
+          balOfficeCodes.get(receiverOfficeId)?.name ??
+          "");
+    const officeCode =
+      receiverOfficeId === "shared"
+        ? "SHARED"
+        : (officeCodes.get(receiverOfficeId)?.code ??
+          balOfficeCodes.get(receiverOfficeId)?.code ??
+          "");
+    trial_balance.push({
+      office_id: receiverOfficeId,
+      office_code: officeCode,
+      office_name: officeName,
+      account_id: accountId,
+      account_code: meta.code,
+      account_name: meta.name,
+      account_type: meta.account_type,
+      debit_total: 0,
+      credit_total: 0,
+      net_balance: opening,
+    });
+    openingAppliedInTrial.add(accountId);
+  }
+  trial_balance.sort((a, b) => {
+    const off = a.office_name.localeCompare(b.office_name);
+    if (off !== 0) {
+      return off;
+    }
+    return a.account_code.localeCompare(b.account_code);
+  });
+
   const headwise_expense = Array.from(expenseMap.values())
     .filter((r) => r.expense_total !== 0)
     .sort((a, b) => {
@@ -332,9 +510,12 @@ export async function buildReportBundle(
     }
     return a.account_code.localeCompare(b.account_code);
   });
+
   for (const row of sortedGl) {
-    const key = `${row.office_id}::${row.account_id}`;
-    const next = (runningByAccount.get(key) ?? 0) + (row.debit - row.credit);
+    const key = row.account_id;
+    const base =
+      runningByAccount.get(key) ?? (accountOpeningById.get(row.account_id) ?? 0);
+    const next = base + (row.debit - row.credit);
     runningByAccount.set(key, next);
     general_ledger.push({
       ...row,

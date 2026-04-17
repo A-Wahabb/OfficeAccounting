@@ -52,12 +52,15 @@ export async function createAssetAction(
     return { ok: false, error: "Not signed in" };
   }
 
-  const { error } = await createAsset(user.id, payload);
+  const { asset, error } = await createAsset(user.id, payload);
+  if (asset) {
+    revalidateAssets();
+    revalidatePath(ROUTES.dashboardAccounts);
+  }
   if (error) {
     return { ok: false, error };
   }
 
-  revalidateAssets();
   return { ok: true };
 }
 

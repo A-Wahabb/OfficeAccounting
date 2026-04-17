@@ -14,6 +14,7 @@ import type { Office } from "@/types/office";
 import {
   ACCOUNT_TYPES,
   accountFormClientSchema,
+  type AccountFormInputValues,
   type AccountFormValues,
 } from "@/validators/account";
 
@@ -32,7 +33,7 @@ export function AccountForm({
   onSuccess,
   onCancelEdit,
 }: AccountFormProps) {
-  const form = useForm<AccountFormValues>({
+  const form = useForm<AccountFormInputValues>({
     resolver: zodResolver(accountFormClientSchema),
     defaultValues: {
       code: "",
@@ -41,8 +42,13 @@ export function AccountForm({
       office_id: "",
       currency: "PKR",
       is_active: true,
+      opening_balance: 0,
     },
   });
+
+  const officeScope = form.watch("office_id");
+  const accountType = form.watch("account_type");
+  const isCashOrBank = accountType === "CASH" || accountType === "BANK";
 
   useEffect(() => {
     if (mode === "edit" && account) {
@@ -53,6 +59,7 @@ export function AccountForm({
         office_id: account.office_id ?? "",
         currency: account.currency,
         is_active: account.is_active,
+        opening_balance: 0,
       });
     }
     if (mode === "create") {
@@ -63,6 +70,7 @@ export function AccountForm({
         office_id: "",
         currency: "PKR",
         is_active: true,
+        opening_balance: 0,
       });
     }
   }, [mode, account, form]);
@@ -88,13 +96,14 @@ export function AccountForm({
             office_id: "",
             currency: "PKR",
             is_active: true,
+            opening_balance: 0,
           });
         }
       } else if (result.fieldErrors) {
         Object.entries(result.fieldErrors).forEach(([key, messages]) => {
           const msg = messages?.[0];
           if (msg) {
-            form.setError(key as keyof AccountFormValues, { message: msg });
+            form.setError(key as keyof AccountFormInputValues, { message: msg });
           }
         });
       }
@@ -119,7 +128,9 @@ export function AccountForm({
       </div>
       <form
         className="space-y-4"
-        onSubmit={form.handleSubmit((data) => mutation.mutate(data))}
+        onSubmit={form.handleSubmit((data) =>
+          mutation.mutate(data as AccountFormValues),
+        )}
         noValidate
       >
         <div className="space-y-1">
@@ -215,6 +226,46 @@ export function AccountForm({
             </p>
           )}
         </div>
+        {mode === "create" && (
+          <div className="space-y-3 rounded-md border border-neutral-200 bg-neutral-50/80 p-4 dark:border-neutral-700 dark:bg-neutral-900/40">
+            <p className="text-sm font-medium text-neutral-800 dark:text-neutral-200">
+              Opening balance
+            </p>
+            {isCashOrBank ? (
+              <>
+                <div className="space-y-1">
+                  <label
+                    htmlFor="acc-opening"
+                    className="text-sm font-medium text-neutral-700 dark:text-neutral-300"
+                  >
+                    Amount (optional)
+                  </label>
+                  <input
+                    id="acc-opening"
+                    type="number"
+                    step="0.01"
+                    className="w-full max-w-xs rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-400 dark:border-neutral-700 dark:bg-neutral-900"
+                    {...form.register("opening_balance", { valueAsNumber: true })}
+                  />
+                  {form.formState.errors.opening_balance && (
+                    <p className="text-xs text-red-600">
+                      {form.formState.errors.opening_balance.message}
+                    </p>
+                  )}
+                </div>
+                <p className="text-xs text-neutral-500">
+                  One simple base amount for this account ({officeScope === "" ? "shared" : "office-specific"}).
+                  Running balance = opening balance + posted transactions.
+                </p>
+              </>
+            ) : (
+              <p className="text-xs text-neutral-500">
+                Opening balance is used for CASH/BANK accounts. For other types, create transactions
+                to build the balance.
+              </p>
+            )}
+          </div>
+        )}
         <div className="space-y-1">
           <label
             htmlFor="acc-currency"
